@@ -1,6 +1,6 @@
 {
   "name": "findweb",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Google search CLI powered by system Chrome",
   "type": "module",
   "packageManager": "bun@1.3.11",

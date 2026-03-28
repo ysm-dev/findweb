@@ -72,9 +72,10 @@ findweb "yc"
 
 1. Launches system Chrome (`/Applications/Google Chrome.app`) with a free debugging port
 2. Connects via CDP using puppeteer-core
-3. Loads the [Ghostery adblocker](https://github.com/ghostery/adblocker) engine programmatically on each page
-4. Navigates to Google, submits the query through DOM manipulation, and extracts results from the rendered page
-5. Returns results as plain text or JSON, then closes Chrome
+3. Reuses a background headless Chrome for the same profile when available
+4. Loads the [Ghostery adblocker](https://github.com/ghostery/adblocker) engine programmatically on each page
+5. Navigates directly to Google search results and extracts data from the rendered page
+6. Returns results as plain text or JSON, then disconnects from Chrome
 
 No Chromium download. No browser extension. No user confirmation.
 

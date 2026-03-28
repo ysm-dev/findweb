@@ -111,7 +111,7 @@ async function runSearch(args: {
       lang: options.lang,
       num: options.num,
       parallel: options.parallel,
-    });
+    }, activeBrowser.initialPage);
 
     printResults(options.json, outcomes);
     process.exitCode = exitCodeForOutcomes(outcomes);

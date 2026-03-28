@@ -1,18 +1,64 @@
+import fs from "node:fs/promises";
 import { spawn } from "node:child_process";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
+import process from "node:process";
 
 import puppeteer from "puppeteer-core";
+import type { Browser, Page } from "puppeteer-core";
 
 import type { ActiveBrowser, LaunchSearchBrowserOptions } from "./types.js";
 
 export const CHROME_BIN = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+const CDP_POLL_MS = 100;
+const REUSABLE_PAGE_URL = "about:blank";
+
+type PersistentBrowserState = {
+  pid: number;
+  port: number;
+};
 
 function createDebugServer(): http.Server {
   return http.createServer();
+}
+
+function persistentStatePath(userDataDir: string): string {
+  return path.join(userDataDir, ".findweb-browser.json");
+}
+
+function isProcessRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function readPersistentState(userDataDir: string): Promise<PersistentBrowserState | null> {
+  try {
+    const file = await fs.readFile(persistentStatePath(userDataDir), "utf8");
+    const parsed = JSON.parse(file) as Partial<PersistentBrowserState>;
+    if (typeof parsed.pid !== "number" || typeof parsed.port !== "number") {
+      return null;
+    }
+
+    return { pid: parsed.pid, port: parsed.port };
+  } catch {
+    return null;
+  }
+}
+
+async function writePersistentState(userDataDir: string, state: PersistentBrowserState): Promise<void> {
+  await fs.mkdir(userDataDir, { recursive: true });
+  await fs.writeFile(persistentStatePath(userDataDir), `${JSON.stringify(state)}\n`, "utf8");
+}
+
+async function clearPersistentState(userDataDir: string): Promise<void> {
+  await fs.rm(persistentStatePath(userDataDir), { force: true });
 }
 
 function wait(delayMs: number): Promise<void> {
@@ -67,7 +113,7 @@ async function isCdpReady(port: number): Promise<boolean> {
 async function waitForCdp(port: number, activeBrowser: ActiveBrowser["chromeProcess"]): Promise<void> {
   const deadline = Date.now() + DEFAULT_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    if (activeBrowser.exitCode !== null) {
+    if (activeBrowser?.exitCode !== null) {
       throw new Error(`Chrome exited before opening debugging port ${port}`);
     }
 
@@ -75,10 +121,70 @@ async function waitForCdp(port: number, activeBrowser: ActiveBrowser["chromeProc
       return;
     }
 
-    await wait(250);
+    await wait(CDP_POLL_MS);
   }
 
   throw new Error(`Chrome debugging port ${port} did not become ready in time`);
+}
+
+function reusablePageScore(url: string): number {
+  if (url.startsWith("https://www.google.com/search?")) {
+    return 3;
+  }
+
+  if (url === REUSABLE_PAGE_URL) {
+    return 2;
+  }
+
+  if (url.startsWith("https://www.google.com/")) {
+    return 1;
+  }
+
+  return 0;
+}
+
+async function reusablePage(browser: Browser): Promise<Page | null> {
+  const pages = await browser.pages();
+  const existing = pages
+    .filter((page) => !page.isClosed())
+    .sort((a, b) => reusablePageScore(b.url()) - reusablePageScore(a.url()))[0] ?? null;
+  if (existing) {
+    return existing;
+  }
+
+  const page = await browser.newPage().catch(() => null);
+  if (!page) {
+    return null;
+  }
+
+  await page.goto(REUSABLE_PAGE_URL, { waitUntil: "domcontentloaded" }).catch(() => undefined);
+  return page;
+}
+
+async function connectToBrowser(port: number): Promise<Browser> {
+  return puppeteer.connect({ browserURL: `http://127.0.0.1:${port}` });
+}
+
+async function connectPersistentBrowser(options: LaunchSearchBrowserOptions): Promise<ActiveBrowser | null> {
+  const state = await readPersistentState(options.userDataDir);
+  if (!state || !isProcessRunning(state.pid) || !(await isCdpReady(state.port))) {
+    await clearPersistentState(options.userDataDir);
+    return null;
+  }
+
+  try {
+    const browser = await connectToBrowser(state.port);
+    return {
+      browser,
+      chromeProcess: null,
+      initialPage: await reusablePage(browser),
+      persistent: true,
+      port: state.port,
+    };
+  } catch {
+    await clearPersistentState(options.userDataDir);
+    return null;
+  }
 }
 
 function createChromeArgs(options: LaunchSearchBrowserOptions, port: number): string[] {
@@ -100,19 +206,48 @@ function createChromeArgs(options: LaunchSearchBrowserOptions, port: number): st
 }
 
 export async function launchSearchBrowser(options: LaunchSearchBrowserOptions): Promise<ActiveBrowser> {
+  if (!options.headed) {
+    const activeBrowser = await connectPersistentBrowser(options);
+    if (activeBrowser) {
+      return activeBrowser;
+    }
+  }
+
   const port = await findFreePort();
   const chromeProcess = spawn(CHROME_BIN, createChromeArgs(options, port), {
-    stdio: ["ignore", "ignore", "pipe"],
+    detached: !options.headed,
+    stdio: options.headed ? ["ignore", "ignore", "pipe"] : "ignore",
   });
 
+  if (!options.headed) {
+    chromeProcess.unref();
+  }
+
   await waitForCdp(port, chromeProcess);
-  const browser = await puppeteer.connect({ browserURL: `http://127.0.0.1:${port}` });
-  return { browser, chromeProcess, port };
+  const browser = await connectToBrowser(port);
+  const initialPage = await reusablePage(browser);
+
+  if (!options.headed && typeof chromeProcess.pid === "number") {
+    await writePersistentState(options.userDataDir, { pid: chromeProcess.pid, port });
+  }
+
+  return {
+    browser,
+    chromeProcess,
+    initialPage,
+    persistent: !options.headed,
+    port,
+  };
 }
 
 export async function closeSearchBrowser(activeBrowser: ActiveBrowser): Promise<void> {
+  if (activeBrowser.persistent) {
+    activeBrowser.browser.disconnect();
+    return;
+  }
+
   await activeBrowser.browser.close().catch(() => undefined);
-  if (activeBrowser.chromeProcess.exitCode === null) {
+  if (activeBrowser.chromeProcess?.exitCode === null) {
     activeBrowser.chromeProcess.kill("SIGTERM");
   }
 }

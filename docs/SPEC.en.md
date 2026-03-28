@@ -183,11 +183,11 @@ This means the first search on a fresh profile blocks until the user completes t
 ## Browser Lifecycle
 
 1. Allocate a free local TCP port.
-2. Spawn system Chrome with `--remote-debugging-port=<port>` and `--user-data-dir=<dir>`.
+2. Reuse an existing headless Chrome for the profile when available; otherwise spawn system Chrome with `--remote-debugging-port=<port>` and `--user-data-dir=<dir>`.
 3. Poll `http://127.0.0.1:<port>/json/version` until CDP is ready.
 4. Connect Puppeteer with `browserURL`.
-5. Open one tab per query as needed.
-6. Close the browser connection and terminate Chrome via `SIGTERM` when finished.
+5. Reuse an idle `about:blank` tab for the first query when possible, then open extra tabs as needed.
+6. Disconnect from headless Chrome when finished; interactive login sessions still terminate Chrome via `SIGTERM`.
 
 ## Search Flow
 
@@ -199,15 +199,12 @@ For each query:
    - Chrome-like user agent
    - `Accept-Language` derived from `--lang`
 3. Enable Ghostery blocking for the page.
-4. Navigate to Google home with:
+4. Navigate directly to Google search results with:
    - `hl=<lang>`
    - `gl=<country>`
    - `pws=0`
-5. Wait for network idle.
-6. Fill the search box by DOM manipulation.
-7. Inject hidden `hl`, `gl`, and `pws` fields into the search form.
-8. Submit the form.
-9. If the destination URL contains `/sorry/`, fail the query.
+5. Wait until either search results, a ready search page, or `/sorry/` is visible.
+6. If the destination URL contains `/sorry/`, fail the query.
 10. Extract results from `a h3` nodes and surrounding card containers.
 11. Disable blocking and close the tab.
 

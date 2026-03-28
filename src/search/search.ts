@@ -2,10 +2,8 @@ import type { Browser, Page } from "puppeteer-core";
 
 import {
   extractResults,
-  gotoGoogleHome,
+  gotoGoogleSearchResults,
   preparePage,
-  submitSearch,
-  waitForIdle,
 } from "./page.js";
 import type {
   LoginSessionOptions,
@@ -84,13 +82,11 @@ function isInterruptedLoginError(error: unknown, loginPage: Page | null, browser
 }
 
 export async function searchQuery(options: SearchQueryOptions): Promise<SearchResult[]> {
-  const page = await options.browser.newPage();
+  const page = options.page ?? (await options.browser.newPage());
   try {
     await preparePage(page, options.lang);
     await options.blocker.enableBlockingInPage(page);
-    await gotoGoogleHome(page, options.lang, options.gl);
-    await waitForIdle(page);
-    await submitSearch(page, options.query, options.lang, options.gl);
+    await gotoGoogleSearchResults(page, options.query, options.lang, options.gl);
 
     if (isSorryPage(page.url())) {
       throw new Error("Google returned a /sorry/ page for this profile/IP. Re-run later or use a logged-in profile.");
@@ -99,7 +95,28 @@ export async function searchQuery(options: SearchQueryOptions): Promise<SearchRe
     return extractResults(page, options.num);
   } finally {
     await options.blocker.disableBlockingInPage(page).catch(() => undefined);
-    await page.close().catch(() => undefined);
+    if (!options.keepOpen) {
+      await page.close().catch(() => undefined);
+    }
+  }
+}
+
+async function runSingleQuery(browser: Browser, options: SearchBatchOptions & { blocker: SearchQueryOptions["blocker"]; query: string; page?: Page | null }): Promise<SearchOutcome> {
+  try {
+    const results = await searchQuery({
+      blocker: options.blocker,
+      browser,
+      gl: options.gl,
+      keepOpen: Boolean(options.page),
+      lang: options.lang,
+      num: options.num,
+      page: options.page ?? undefined,
+      query: options.query,
+    });
+
+    return { error: null, query: options.query, results };
+  } catch (error) {
+    return { error: toErrorMessage(error), query: options.query, results: [] };
   }
 }
 
@@ -129,13 +146,31 @@ async function runBatchWorker(browser: Browser, options: SearchBatchOptions & { 
   }
 }
 
-export async function searchQueriesInTabs(browser: Browser, blocker: SearchQueryOptions["blocker"], queries: string[], options: SearchBatchOptions): Promise<SearchOutcome[]> {
+export async function searchQueriesInTabs(browser: Browser, blocker: SearchQueryOptions["blocker"], queries: string[], options: SearchBatchOptions, initialPage: Page | null = null): Promise<SearchOutcome[]> {
   const concurrency = Math.max(1, Math.min(options.parallel, queries.length));
   const results = new Array<SearchOutcome>(queries.length);
   const cursor = { value: 0 };
 
+  const initialTask = initialPage && queries[0]
+    ? runSingleQuery(browser, {
+        blocker,
+        gl: options.gl,
+        lang: options.lang,
+        num: options.num,
+        page: initialPage,
+        parallel: options.parallel,
+        query: queries[0],
+      }).then((outcome) => {
+        results[0] = outcome;
+      })
+    : null;
+
+  cursor.value = initialTask ? 1 : 0;
+
   await Promise.all(
-    Array.from({ length: concurrency }, () =>
+    [
+      ...(initialTask ? [initialTask] : []),
+      ...Array.from({ length: Math.max(0, concurrency - (initialTask ? 1 : 0)) }, () =>
       runBatchWorker(browser, {
         blocker,
         cursor,
@@ -146,7 +181,8 @@ export async function searchQueriesInTabs(browser: Browser, blocker: SearchQuery
         queries,
         results,
       }),
-    ),
+      ),
+    ],
   );
 
   return results;

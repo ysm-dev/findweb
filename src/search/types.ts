@@ -1,7 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 
 import type { PuppeteerBlocker } from "@ghostery/adblocker-puppeteer";
-import type { Browser } from "puppeteer-core";
+import type { Browser, Page } from "puppeteer-core";
 
 export type SearchResult = {
   title: string;
@@ -31,7 +31,9 @@ export type LaunchSearchBrowserOptions = {
 
 export type ActiveBrowser = {
   browser: Browser;
-  chromeProcess: ChildProcess;
+  chromeProcess: ChildProcess | null;
+  initialPage: Page | null;
+  persistent: boolean;
   port: number;
 };
 
@@ -39,8 +41,10 @@ export type SearchQueryOptions = {
   blocker: PuppeteerBlocker;
   browser: Browser;
   gl: string;
+  keepOpen?: boolean;
   lang: string;
   num: number;
+  page?: Page;
   query: string;
 };
 

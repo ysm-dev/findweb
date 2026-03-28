@@ -183,11 +183,11 @@ findweb login [options]
 ## 브라우저 생명주기
 
 1. 로컬 빈 TCP 포트를 할당한다.
-2. 시스템 Chrome을 `--remote-debugging-port=<port>`와 `--user-data-dir=<dir>`로 실행한다.
+2. 프로필에 맞는 headless Chrome이 이미 있으면 재사용하고, 없으면 시스템 Chrome을 `--remote-debugging-port=<port>`와 `--user-data-dir=<dir>`로 실행한다.
 3. `http://127.0.0.1:<port>/json/version`을 폴링해 CDP 준비 상태를 확인한다.
 4. Puppeteer를 `browserURL`로 연결한다.
-5. 필요한 만큼 쿼리별 탭을 연다.
-6. 종료 시 브라우저 연결을 닫고 Chrome에 `SIGTERM`을 보낸다.
+5. 가능하면 idle 상태의 `about:blank` 탭을 첫 쿼리에 재사용하고, 필요할 때만 추가 탭을 연다.
+6. 종료 시 headless Chrome과는 연결만 끊고, 인터랙티브 로그인 세션은 계속 `SIGTERM`으로 종료한다.
 
 ## 검색 흐름
 
@@ -199,15 +199,12 @@ findweb login [options]
    - Chrome 유사 user-agent
    - `--lang` 기반 `Accept-Language`
 3. Ghostery 차단기 활성화
-4. 다음 파라미터로 Google 홈 이동
+4. 다음 파라미터로 Google 검색 결과 페이지에 직접 이동
    - `hl=<lang>`
    - `gl=<country>`
    - `pws=0`
-5. 네트워크 idle 대기
-6. DOM 조작으로 검색창 값 입력
-7. 검색 폼에 `hl`, `gl`, `pws` hidden 필드 주입
-8. 폼 제출
-9. 결과 URL에 `/sorry/`가 있으면 실패 처리
+5. 검색 결과, 준비된 검색 페이지, 또는 `/sorry/` 중 하나가 보일 때까지 대기
+6. 결과 URL에 `/sorry/`가 있으면 실패 처리
 10. `a h3`와 주변 카드에서 결과 추출
 11. 차단기 비활성화 후 탭 닫기
 

@@ -5,6 +5,18 @@ import type { SearchResult } from "./types.js";
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_PWS = "0";
 
+const SEARCH_READY_SCRIPT = `(() => {
+  if (window.location.pathname.includes('/sorry/')) {
+    return true;
+  }
+
+  if (document.querySelector('a h3')) {
+    return true;
+  }
+
+  return window.location.pathname === '/search' && document.readyState !== 'loading' && Boolean(document.querySelector('textarea[name="q"], input[name="q"]'));
+})()`;
+
 function userAgent(): string {
   return [
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
@@ -26,10 +38,6 @@ function acceptLanguage(lang: string): string {
   return `${lang};q=1.0,en;q=0.8`;
 }
 
-function createGoogleHomeUrl(lang: string, gl: string): string {
-  return `https://www.google.com/?hl=${encodeURIComponent(lang)}&gl=${encodeURIComponent(gl)}&pws=${DEFAULT_PWS}`;
-}
-
 function createGoogleSearchUrl(query: string, lang: string, gl: string): string {
   return [
     "https://www.google.com/search",
@@ -38,63 +46,6 @@ function createGoogleSearchUrl(query: string, lang: string, gl: string): string 
     `&pws=${encodeURIComponent(DEFAULT_PWS)}`,
     `&q=${encodeURIComponent(query)}`,
   ].join("");
-}
-
-function createSubmitSearchScript(query: string, lang: string, gl: string): string {
-  return `(() => {
-    const value = ${JSON.stringify(query)};
-    const lang = ${JSON.stringify(lang)};
-    const gl = ${JSON.stringify(gl)};
-    const pws = ${JSON.stringify(DEFAULT_PWS)};
-    const el = document.querySelector('textarea[name="q"], input[name="q"]');
-    if (!el) {
-      throw new Error("Google search input not found");
-    }
-
-    const setHidden = (form, name, hiddenValue) => {
-      let input = form.querySelector('input[name="' + name + '"]');
-      if (!input) {
-        input = document.createElement("input");
-        input.setAttribute("type", "hidden");
-        input.setAttribute("name", name);
-        form.appendChild(input);
-      }
-      input.setAttribute("value", hiddenValue);
-    };
-
-    el.focus();
-    const proto = Object.getPrototypeOf(el);
-    const descriptor = proto ? Object.getOwnPropertyDescriptor(proto, "value") : undefined;
-    if (descriptor && typeof descriptor.set === "function") {
-      descriptor.set.call(el, value);
-    } else {
-      el.value = value;
-    }
-
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-    el.dispatchEvent(new Event("change", { bubbles: true }));
-
-    const form = el.form || document.querySelector('form[action="/search"]');
-    if (form && typeof form.requestSubmit === "function") {
-      setHidden(form, "hl", lang);
-      setHidden(form, "gl", gl);
-      setHidden(form, "pws", pws);
-      form.requestSubmit();
-      return;
-    }
-
-    if (form) {
-      const action = new URL(form.getAttribute("action") || "/search", window.location.origin);
-      action.searchParams.set("hl", lang);
-      action.searchParams.set("gl", gl);
-      action.searchParams.set("pws", pws);
-      form.setAttribute("action", action.toString());
-      form.submit();
-      return;
-    }
-
-    window.location.href = ${JSON.stringify(createGoogleSearchUrl(query, lang, gl))};
-  })()`;
 }
 
 function createExtractResultsScript(limit: number): string {
@@ -147,22 +98,15 @@ export async function preparePage(page: Page, lang: string): Promise<void> {
   });
 }
 
-export async function gotoGoogleHome(page: Page, lang: string, gl: string): Promise<void> {
-  await page.goto(createGoogleHomeUrl(lang, gl), { waitUntil: "networkidle2" });
-  await page.waitForSelector('textarea[name="q"], input[name="q"]');
-}
+export async function gotoGoogleSearchResults(page: Page, query: string, lang: string, gl: string): Promise<void> {
+  const searchUrl = createGoogleSearchUrl(query, lang, gl);
+  if (page.url() !== searchUrl) {
+    await page.goto(searchUrl, { waitUntil: "domcontentloaded" });
+  }
 
-export async function submitSearch(page: Page, query: string, lang: string, gl: string): Promise<void> {
-  await Promise.all([
-    page.waitForNavigation({ waitUntil: "networkidle2" }),
-    page.evaluate(createSubmitSearchScript(query, lang, gl)),
-  ]);
+  await page.waitForFunction(SEARCH_READY_SCRIPT, { timeout: DEFAULT_TIMEOUT_MS });
 }
 
 export async function extractResults(page: Page, limit: number): Promise<SearchResult[]> {
   return page.evaluate(createExtractResultsScript(limit)) as Promise<SearchResult[]>;
-}
-
-export async function waitForIdle(page: Page): Promise<void> {
-  await page.waitForNetworkIdle({ idleTime: 700, timeout: DEFAULT_TIMEOUT_MS }).catch(() => undefined);
 }
