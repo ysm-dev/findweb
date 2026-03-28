@@ -2,235 +2,355 @@
 
 ## Overview
 
-`findweb` is a command-line tool that performs Google searches using the locally installed system Chrome browser. It extracts organic search results from the rendered DOM and returns them as plain text or JSON. Ad and tracker blocking is applied programmatically through the Ghostery adblocker engine -- no browser extension installation or user confirmation is required.
+`findweb` is a command-line Google search tool that uses the locally installed system Chrome browser. It renders real Google pages, extracts organic results from the DOM, and prints them as plain text or JSON. Ads and trackers are blocked programmatically with the Ghostery blocker engine, so the tool does not require any browser extension or Chrome Web Store interaction.
 
 ## Goals
 
-- Provide a CLI interface for Google Search that returns clean, structured results.
-- Use the real system Chrome binary (`/Applications/Google Chrome.app`) to avoid detection as a bot or headless scraper.
-- Block ads and trackers at the network/cosmetic level without requiring any Chrome extension.
-- Support batch searches by opening multiple tabs in a single browser instance and profile.
-- Minimize personalization and regional bias in results through explicit `hl`, `gl`, and `pws` parameters.
+- Provide a practical Google search CLI with clean, readable output.
+- Use the real system Chrome binary instead of bundled Chromium.
+- Support batch searches by reusing one browser instance and one profile across multiple tabs.
+- Reduce Google rate limiting by forcing an interactive login on first use of a profile.
+- Minimize result drift with explicit `hl`, `gl`, and `pws` parameters.
 
 ## Non-Goals
 
-- This tool does not use the Google Search API.
-- It does not attempt to bypass CAPTCHAs. If Google returns a `/sorry/` page, the search fails gracefully.
-- It does not guarantee 100% ad removal. The Ghostery filter lists handle most cases, but Google SERP ads may occasionally appear.
-- It does not manage multiple Google accounts or proxy rotation.
+- No Google Search API integration.
+- No CAPTCHA solving or rate-limit bypass.
+- No complete guarantee that Google inline sponsored results will disappear.
+- No proxy rotation, account pool management, or multi-user orchestration.
 
-## Requirements
+## Runtime Requirements
 
-| Requirement             | Version / Value                                          |
-| ----------------------- | -------------------------------------------------------- |
-| Runtime                 | Bun >= 1.3.11                                            |
-| Type checker            | `@typescript/native-preview` (tsgo) >= 7.0.0-dev         |
-| System Chrome           | macOS `/Applications/Google Chrome.app` (branded Chrome)  |
-| Platform                | macOS (hardcoded Chrome binary path)                      |
+| Requirement   | Value |
+| --- | --- |
+| Runtime | Bun >= 1.3.11 |
+| Type checker | `@typescript/native-preview` (`tsgo`) |
+| Browser | macOS system Chrome at `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome` |
+| Platform | macOS |
 
 ## Tech Stack
 
-| Layer          | Technology                                                    |
-| -------------- | ------------------------------------------------------------- |
-| Language       | TypeScript (strict, ES2022, NodeNext modules)                 |
-| Runtime        | Bun                                                           |
-| Type checker   | tsgo (`@typescript/native-preview`)                           |
-| CLI framework  | citty                                                         |
-| Validation     | Zod 4                                                         |
-| Browser driver | puppeteer-core (connects via CDP over `--remote-debugging-port`) |
-| Ad blocker     | `@ghostery/adblocker-puppeteer` (prebuilt ads + tracking lists) |
-| Test runner    | `bun test`                                                    |
+| Layer | Technology |
+| --- | --- |
+| Language | TypeScript |
+| Runtime | Bun |
+| Type checker | tsgo |
+| CLI framework | citty |
+| Validation | Zod |
+| Browser automation | puppeteer-core over CDP |
+| Ad blocking | `@ghostery/adblocker-puppeteer` |
+| Tests | `bun test` |
 
-## Architecture
+## Project Layout
 
-### Directory Structure
-
-```
+```text
 findweb/
+  bin/
+    findweb
   docs/
     SPEC.en.md
     SPEC.ko.md
   src/
-    index.ts              # Entry point: dispatches to search or login
+    index.ts
     cli/
-      dispatch.ts         # Root argument dispatcher (search vs login vs help)
-      dispatch.test.ts    # Unit tests for dispatcher
-      help.ts             # Root help text renderer
-      types.ts            # CLI-layer type definitions
-      schema.ts           # Zod schemas for input normalization/validation
-      schema.test.ts      # Unit tests for schema normalization
-      format.ts           # Plain text and JSON output formatting
+      dispatch.ts
+      dispatch.test.ts
+      help.ts
+      profile.ts
+      schema.ts
+      schema.test.ts
+      format.ts
+      types.ts
+      flows/
+        login.ts
       commands/
-        search.ts         # Search command definition
-        login.ts          # Login command definition
+        search.ts
+        login.ts
     search/
-      types.ts            # Search-layer type definitions
-      browser.ts          # System Chrome lifecycle (launch, connect, close)
-      page.ts             # Page-level operations (navigate, submit, extract)
-      search.ts           # Single-query and batch search orchestration
-      blocker.ts          # Ghostery adblocker engine loading and caching
-  bin/
-    findweb               # npm bin entry point
-  dist/                   # Build output (bun build)
+      blocker.ts
+      browser.ts
+      page.ts
+      search.ts
+      types.ts
+  dist/
   package.json
   tsconfig.json
   bun.lock
 ```
 
-### Module Responsibilities
+## Module Responsibilities
 
-| Module                   | Responsibility                                                     |
-| ------------------------ | ------------------------------------------------------------------ |
-| `src/index.ts`           | Entry point. Dispatches raw args to search, login, or help.        |
-| `cli/dispatch.ts`        | Determines whether the invocation is a search, login, or help request by inspecting the first positional argument. |
-| `cli/help.ts`            | Renders the root help text shown when no query is provided.        |
-| `cli/commands/search.ts` | Defines the search command with citty args. Normalizes input through Zod, launches browser, runs batch search, prints results, closes browser. |
-| `cli/commands/login.ts`  | Defines the login command. Opens a headed Chrome with Google sign-in page. Waits for the user to close the window. |
-| `cli/schema.ts`          | Zod schemas that validate and coerce raw CLI input into typed options. Handles defaults for `gl`, `lang`, `num`, `parallel`, `userDataDir`. |
-| `cli/format.ts`          | Formats search outcomes as plain text or JSON for stdout.          |
-| `cli/types.ts`           | TypeScript types for CLI-layer options and printable results.      |
-| `search/types.ts`        | TypeScript types shared across the search layer.                   |
-| `search/browser.ts`      | Spawns system Chrome with `--remote-debugging-port`, finds a free port, waits for CDP readiness, connects Puppeteer, and cleans up on close. |
-| `search/page.ts`         | Page-level helpers: set user-agent/headers, navigate to Google home, submit a search query via DOM manipulation, extract results from rendered HTML. |
-| `search/search.ts`       | Orchestrates single and batch searches. Opens a new tab per query, applies the Ghostery blocker, navigates, extracts results, and closes the tab. Batch mode uses a shared cursor for worker-based concurrency. |
-| `search/blocker.ts`      | Loads the Ghostery prebuilt ads-and-tracking engine. Caches the serialized engine binary to `~/.cache/google-search/ghostery-engine.bin`. Singleton -- loaded once per process. |
+| Module | Responsibility |
+| --- | --- |
+| `src/index.ts` | Root entry point. Dispatches raw args to help, search, or login. |
+| `src/cli/dispatch.ts` | Decides whether the invocation is root help, login, or search based on the first positional arg. |
+| `src/cli/help.ts` | Renders root usage text. |
+| `src/cli/profile.ts` | Manages local profile preparation state via `.findweb-profile-ready`. |
+| `src/cli/flows/login.ts` | Shared interactive login flow and first-run login enforcement. |
+| `src/cli/commands/search.ts` | Search command definition and orchestration. |
+| `src/cli/commands/login.ts` | Explicit login command definition. |
+| `src/cli/schema.ts` | Zod normalization and validation for search/login options. |
+| `src/cli/format.ts` | Plain-text and JSON result formatting. |
+| `src/search/browser.ts` | Launches, connects to, and closes system Chrome. |
+| `src/search/page.ts` | Page-level helpers: headers, navigation, form submission, result extraction. |
+| `src/search/search.ts` | Single-query search, batch search, and login-session browser flow. |
+| `src/search/blocker.ts` | Loads and caches the Ghostery blocker engine. |
 
-## CLI Interface
+## CLI Model
 
-### Default Behavior
+### Root Behavior
 
-```
+`findweb` treats the default invocation as search.
+
+```bash
 findweb [options] <query> [query ...]
 ```
 
-When invoked with one or more positional arguments, performs a Google search. When invoked with no arguments or only flags, prints usage.
+Examples:
 
-### Login Command
-
+```bash
+findweb "yc"
+findweb "yc" "apple" --parallel 2
+findweb --json "react useEffect"
+findweb login
 ```
+
+### Search Mode
+
+- One or more positional query strings are required.
+- Multiple positional queries trigger batch mode.
+- Search results are returned in input order.
+- `--parallel` controls maximum concurrent tabs.
+
+### Login Mode
+
+```bash
 findweb login [options]
 ```
 
-Opens a visible (headed) Chrome window with the Google sign-in page. The user signs in manually, then closes the browser. The resulting profile (cookies, session) is saved to `--userDataDir` for reuse.
+- Opens a headed Chrome window.
+- Navigates to the Google sign-in flow.
+- Waits until the browser window is closed.
+- Marks the profile as prepared by writing `.findweb-profile-ready` under the profile directory.
 
-`setup` is accepted as an alias for `login`.
+`setup` is accepted as an alias for `login` by the root dispatcher.
 
-### Search Options
+## Search Options
 
-| Option             | Type    | Default                      | Description                          |
-| ------------------ | ------- | ---------------------------- | ------------------------------------ |
-| `<query>`          | positional | (required, at least one)  | Search query. Repeat for batch mode. |
-| `--gl`             | string  | `us`                         | Google region hint (`gl` parameter). |
-| `-l`, `--lang`     | string  | `en`                         | Google UI language (`hl` parameter). |
-| `-n`, `--num`      | integer | `3`                          | Maximum results per query.           |
-| `--parallel`       | integer | `4`                          | Maximum concurrent tabs for batch.   |
-| `--userDataDir`    | string  | auto-detected                | Chrome profile directory.            |
-| `--headed`         | boolean | `false`                      | Show the Chrome window.              |
-| `--json`           | boolean | `false`                      | Print output as JSON.                |
+| Option | Default | Description |
+| --- | --- | --- |
+| `<query>` | required | Search query; repeat for batch mode |
+| `--gl <country>` | `us` | Google region hint |
+| `-l, --lang <lang>` | `en` | Google UI language |
+| `-n, --num <count>` | `3` | Results per query |
+| `--parallel <count>` | `4` | Batch tab concurrency |
+| `--userDataDir <dir>` | auto-detected | Chrome profile directory |
+| `--headed` | `false` | Run visible Chrome during search |
+| `--json` | `false` | Print JSON instead of plain text |
 
-### Login Options
+## Login Options
 
-| Option             | Type   | Default        | Description                          |
-| ------------------ | ------ | -------------- | ------------------------------------ |
-| `--gl`             | string | `us`           | Google region hint.                  |
-| `-l`, `--lang`     | string | `en`           | Google UI language.                  |
-| `--userDataDir`    | string | auto-detected  | Chrome profile directory.            |
+| Option | Default | Description |
+| --- | --- | --- |
+| `--gl <country>` | `us` | Google region hint |
+| `-l, --lang <lang>` | `en` | Google UI language |
+| `--userDataDir <dir>` | auto-detected | Chrome profile directory |
 
-### Exit Codes
+## First-Run Login Enforcement
 
-- `0` -- all queries succeeded.
-- `1` -- one or more queries failed.
+This project now forces login for any profile that has not been explicitly prepared.
+
+### Prepared Profile Marker
+
+- Marker file: `.findweb-profile-ready`
+- Location: inside the selected `userDataDir`
+- Writer: `src/cli/flows/login.ts`
+- Reader: `src/cli/profile.ts`
+
+### Behavior
+
+When a search starts:
+
+1. `findweb` resolves the target profile directory.
+2. It checks for `.findweb-profile-ready`.
+3. If the marker exists, search continues immediately.
+4. If the marker does not exist, `findweb` opens the interactive login flow first.
+5. After the user closes the login browser, `findweb` writes the marker.
+6. The original search then continues.
+
+This means the first search on a fresh profile blocks until the user completes the login flow.
 
 ## Browser Lifecycle
 
-1. **Port allocation.** A free TCP port is found by binding to port `0` on `127.0.0.1`.
-2. **Chrome spawn.** System Chrome is launched as a child process with `--remote-debugging-port=<port>`, `--user-data-dir=<dir>`, and `--headless=new` (unless `--headed`). No Puppeteer-managed Chromium is used.
-3. **CDP connection.** The tool polls `http://127.0.0.1:<port>/json/version` until Chrome is ready (up to 30 seconds), then connects Puppeteer via `puppeteer.connect({ browserURL })`.
-4. **Search execution.** Each query opens a new tab, applies the Ghostery blocker, navigates to Google, submits the query, waits for results, extracts data from the DOM, then closes the tab.
-5. **Cleanup.** After all queries complete (or on error), the Puppeteer connection is closed and Chrome is terminated via `SIGTERM`.
+1. Allocate a free local TCP port.
+2. Spawn system Chrome with `--remote-debugging-port=<port>` and `--user-data-dir=<dir>`.
+3. Poll `http://127.0.0.1:<port>/json/version` until CDP is ready.
+4. Connect Puppeteer with `browserURL`.
+5. Open one tab per query as needed.
+6. Close the browser connection and terminate Chrome via `SIGTERM` when finished.
 
-## Search Flow (per query)
+## Search Flow
 
-1. **Page preparation.** Set viewport (1440x1400), user-agent (Chrome 146 on macOS), and `Accept-Language` header derived from `--lang`.
-2. **Ad blocker activation.** `blocker.enableBlockingInPage(page)` -- intercepts network requests and injects cosmetic filters.
-3. **Navigate to Google.** `https://www.google.com/?hl=<lang>&gl=<gl>&pws=0`.
-4. **Wait for idle.** `networkidle2` + 700ms idle window.
-5. **Submit query.** Programmatically sets the search input value via React-compatible `descriptor.set()`, injects hidden `hl`/`gl`/`pws` fields, and submits the form.
-6. **Check for block.** If the resulting URL contains `/sorry/`, the query is marked as failed.
-7. **Extract results.** Iterates `<a> <h3>` elements in the rendered DOM. For each result:
-   - Extracts title from `<h3>` inner text.
-   - Extracts URL from the parent `<a>` href.
-   - Finds a snippet from the nearest card container's inner text, preferring lines >= 20 characters.
-   - Skips Google-internal links, duplicates, and meta text like "About this result".
-8. **Cleanup.** Disables blocker in page, closes the tab.
+For each query:
+
+1. Create a new tab.
+2. Apply common page setup:
+   - viewport: `1440 x 1400`
+   - Chrome-like user agent
+   - `Accept-Language` derived from `--lang`
+3. Enable Ghostery blocking for the page.
+4. Navigate to Google home with:
+   - `hl=<lang>`
+   - `gl=<country>`
+   - `pws=0`
+5. Wait for network idle.
+6. Fill the search box by DOM manipulation.
+7. Inject hidden `hl`, `gl`, and `pws` fields into the search form.
+8. Submit the form.
+9. If the destination URL contains `/sorry/`, fail the query.
+10. Extract results from `a h3` nodes and surrounding card containers.
+11. Disable blocking and close the tab.
 
 ## Batch Mode
 
-Batch mode reuses a single browser instance and Chrome profile. Multiple tabs are opened concurrently up to the `--parallel` limit.
+Batch mode uses one browser and one profile.
 
-- A shared atomic cursor (`{ value: number }`) distributes queries across worker coroutines.
-- Each worker picks the next unprocessed query index, runs the full search flow in a new tab, and stores the result.
-- Results are returned in input order regardless of completion order.
+- Queries are stored in an input array.
+- A shared cursor assigns work to worker coroutines.
+- Each worker opens a fresh tab, runs the normal single-query flow, and stores its result.
+- Output preserves the original query order.
 
 ## Ad Blocking
 
-The Ghostery adblocker engine (`@ghostery/adblocker-puppeteer`) is loaded once per process from prebuilt filter lists (ads + tracking). The serialized engine is cached at `~/.cache/google-search/ghostery-engine.bin`.
+The Ghostery blocker is loaded once per process from prebuilt ads-and-tracking lists.
 
-This approach:
-- Requires no Chrome extension and no user confirmation.
-- Works in both headless and headed mode.
-- Blocks network-level ad/tracker requests and applies cosmetic hiding rules.
-- Does not guarantee complete removal of Google SERP "Sponsored" results, as those are rendered inline in the DOM.
+- Cache file: `~/.cache/google-search/ghostery-engine.bin`
+- Load strategy: lazy singleton
+- Scope: enabled per page, disabled before tab close
 
-## Google Search Parameters
+The blocker reduces many ad and tracker requests, but Google inline sponsored modules are not guaranteed to disappear in every case.
 
-| Parameter | Default | Purpose                                    |
-| --------- | ------- | ------------------------------------------ |
-| `hl`      | `en`    | Google UI language.                        |
-| `gl`      | `us`    | Region hint for result ranking.            |
-| `pws`     | `0`     | Disable personalized search results.       |
+## Google Query Parameters
 
-These are applied to the Google home URL, injected as hidden form fields on submit, and included in fallback direct-navigation URLs.
+| Parameter | Default | Purpose |
+| --- | --- | --- |
+| `hl` | `en` | UI language |
+| `gl` | `us` | Region hint |
+| `pws` | `0` | Disable personalized search |
+
+These are applied to:
+
+- the Google home URL
+- hidden fields injected into the search form
+- the fallback direct search URL
+- the login flow continue URL
 
 ## Profile Management
 
-- The default profile directory is `/tmp/google-search-profile`, or `/tmp/gsearch-manual-login-profile` if it already exists.
-- The environment variable `GOOGLE_SEARCH_USER_DATA_DIR` overrides the default.
-- The `login` command creates a reusable signed-in profile. Signing in reduces the likelihood of Google rate-limiting (`/sorry/` pages).
-- A signed-in profile with existing cookies is significantly more stable than a fresh empty profile.
+- Default profile path:
+  - `/tmp/google-search-profile`
+  - or legacy fallback `/tmp/gsearch-manual-login-profile` if it already exists
+- Environment override:
+  - `GOOGLE_SEARCH_USER_DATA_DIR`
+- Prepared profile marker:
+  - `.findweb-profile-ready`
 
-## Input Validation
+Important distinction:
 
-All CLI input is validated through Zod schemas before execution:
+- A **Chrome profile** stores cookies and browser state.
+- A **prepared profile marker** tells `findweb` that interactive login has already been completed for that profile.
 
-- `num` and `parallel` must be positive integers.
-- `gl` and `lang` must be non-empty strings.
-- `userDataDir` must be a non-empty string, resolved to an absolute path.
-- At least one query is required for search.
-- Invalid input produces a human-readable error message and exits with code `1`.
+## Output
+
+### Plain Text
+
+Single query:
+
+```text
+1. Y Combinator
+https://www.ycombinator.com/
+Y Combinator created a new model for funding early stage startups.
+```
+
+Batch query:
+
+```text
+[yc]
+1. Y Combinator
+https://www.ycombinator.com/
+...
+
+[apple]
+1. Apple
+https://www.apple.com/
+...
+```
+
+### JSON
+
+Single query:
+
+```json
+[
+  {
+    "title": "Y Combinator",
+    "url": "https://www.ycombinator.com/",
+    "snippet": "Y Combinator created a new model for funding early stage startups."
+  }
+]
+```
+
+Batch query:
+
+```json
+[
+  {
+    "query": "yc",
+    "error": null,
+    "results": [
+      {
+        "title": "Y Combinator",
+        "url": "https://www.ycombinator.com/",
+        "snippet": "..."
+      }
+    ]
+  }
+]
+```
+
+## Validation
+
+Zod enforces:
+
+- positive integers for `num` and `parallel`
+- non-empty strings for `gl`, `lang`, and `userDataDir`
+- absolute-path normalization for `userDataDir`
+- at least one query for search mode
+
+Invalid input exits with code `1` and a human-readable error message.
 
 ## Error Handling
 
-- Google `/sorry/` pages are detected by checking the page URL after navigation. The query is marked as failed with a descriptive error message.
-- Chrome launch failures (e.g., port not ready within 30 seconds, Chrome exits prematurely) throw immediately.
-- Browser cleanup (`closeSearchBrowser`) always runs in a `finally` block, even on error.
-- The Ghostery blocker's `disableBlockingInPage` is called in a `finally` block and swallows errors.
+- `/sorry/` is treated as a query failure.
+- Browser startup failures abort immediately.
+- Browser cleanup always runs in `finally` blocks.
+- Blocker disable errors are ignored during cleanup.
 
 ## Scripts
 
-| Script       | Command                                              |
-| ------------ | ---------------------------------------------------- |
-| `dev`        | `bun run ./src/index.ts`                              |
-| `build`      | `bun build ./src/index.ts --outdir ./dist --target bun` |
-| `start`      | `bun run ./dist/index.js`                             |
-| `check`      | `tsgo -p tsconfig.json --noEmit`                      |
-| `test`       | `bun test`                                            |
+| Script | Command |
+| --- | --- |
+| `dev` | `bun run ./src/index.ts` |
+| `build` | `bun build ./src/index.ts --outdir ./dist --target bun` |
+| `start` | `bun run ./dist/index.js` |
+| `check` | `tsgo -p tsconfig.json --noEmit` |
+| `test` | `bun test` |
 
 ## Known Limitations
 
-- **macOS only.** The Chrome binary path is hardcoded to `/Applications/Google Chrome.app`.
-- **Google DOM changes.** Result extraction relies on CSS selectors (`.N54PNb`, `.tF2Cxc`, `.MjjYud`, `.g`, `.ezO2md`, `a h3`) that may change without notice.
-- **Rate limiting.** Google may serve `/sorry/` pages for rapid or concurrent searches, especially from fresh profiles or flagged IPs. A signed-in profile mitigates this.
-- **No CAPTCHA solving.** If Google requires a CAPTCHA, the search fails.
-- **Incomplete ad removal.** Google's inline "Sponsored" results may not be fully blocked by the Ghostery filter lists.
-- **IP-based localization.** Even with `gl=us` and `hl=en`, Google may mix in locally relevant results based on the client's IP address.
+- macOS-only Chrome path.
+- Google DOM changes can break selectors.
+- Fresh or flagged IPs can still trigger `/sorry/` even after login.
+- No CAPTCHA handling.
+- Inline Google sponsored modules may still appear.
+- Even with `gl=us` and `hl=en`, IP-based localization may still affect ranking.

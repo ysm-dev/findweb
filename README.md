@@ -36,6 +36,25 @@ findweb -n 10 "rust async"
 findweb login
 ```
 
+## First Run Behavior
+
+`findweb` requires an initialized Google profile before it will run the first search for a given `--userDataDir`.
+
+- If the profile is already prepared, search runs immediately.
+- If the profile has not been prepared yet, `findweb` automatically opens the login flow first.
+- After you sign in and close the browser window, `findweb` writes a local prepared-profile marker so future searches can start immediately.
+
+In practice, the first search on a fresh profile behaves like this:
+
+```bash
+findweb "yc"
+```
+
+1. detect missing prepared-profile marker
+2. open headed Chrome login flow
+3. wait for you to sign in and close the browser
+4. continue the original search
+
 ## Options
 
 | Option             | Default        | Description                          |
@@ -70,13 +89,15 @@ Results are returned in input order. Concurrency is controlled by `--parallel` (
 
 ## Login
 
-Google rate-limits unauthenticated or fresh-profile searches. To reduce `/sorry/` pages, sign in once:
+Google rate-limits unauthenticated or fresh-profile searches. `findweb` now enforces an interactive login before the first search on a new profile.
+
+You can trigger that ahead of time with:
 
 ```bash
 findweb login
 ```
 
-This opens a visible Chrome window with the Google sign-in page. After signing in, close the browser. The session is saved to the profile directory and reused by future searches.
+This opens a visible Chrome window with the Google sign-in page. After signing in, close the browser. The session is saved to the profile directory, and `findweb` records that the profile is ready for future searches.
 
 ## Output
 

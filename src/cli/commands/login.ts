@@ -1,33 +1,7 @@
-import fs from "node:fs/promises";
-
 import { defineCommand, type ArgsDef } from "citty";
 
-import { closeSearchBrowser, launchSearchBrowser } from "../../search/browser.js";
-import { runLoginSession } from "../../search/search.js";
+import { runInteractiveLoginFlow } from "../flows/login.js";
 import { normalizeLoginOptions } from "../schema.js";
-
-async function ensureProfileDir(dirPath: string): Promise<void> {
-  await fs.mkdir(dirPath, { recursive: true });
-}
-
-async function runLoginFlow(gl: string, lang: string, userDataDir: string): Promise<void> {
-  await ensureProfileDir(userDataDir);
-  const activeBrowser = await launchSearchBrowser({
-    headed: true,
-    lang,
-    userDataDir,
-  });
-
-  console.log(`Login browser launched with profile: ${userDataDir}`);
-  console.log("Sign in to Google if you want to reuse a logged-in search profile.");
-  console.log("Close the browser window when you are done.");
-
-  try {
-    await runLoginSession({ browser: activeBrowser.browser, gl, lang });
-  } finally {
-    await closeSearchBrowser(activeBrowser);
-  }
-}
 
 function createLoginArgs(): ArgsDef {
   return {
@@ -57,7 +31,7 @@ async function runLogin(args: { gl?: unknown; lang?: unknown; userDataDir?: unkn
     userDataDir: typeof args.userDataDir === "string" ? args.userDataDir : undefined,
   });
 
-  await runLoginFlow(options.gl, options.lang, options.userDataDir);
+  await runInteractiveLoginFlow(options);
 }
 
 export function createLoginCommand(commandName = "findweb login") {

@@ -1,17 +1,14 @@
-import fs from "node:fs/promises";
 import process from "node:process";
 
 import { defineCommand, type ArgsDef } from "citty";
 
+import { ensureInteractiveLogin } from "../flows/login.js";
+import { ensureProfileDir } from "../profile.js";
 import { loadBlocker } from "../../search/blocker.js";
 import { closeSearchBrowser, launchSearchBrowser } from "../../search/browser.js";
 import { searchQueriesInTabs } from "../../search/search.js";
 import { printJsonResults, printPlainResults, exitCodeForOutcomes } from "../format.js";
 import { normalizeSearchOptions } from "../schema.js";
-
-async function ensureProfileDir(dirPath: string): Promise<void> {
-  await fs.mkdir(dirPath, { recursive: true });
-}
 
 function printResults(json: boolean, outcomes: Awaited<ReturnType<typeof searchQueriesInTabs>>): void {
   if (json) {
@@ -87,6 +84,15 @@ async function runSearch(args: {
   });
 
   await ensureProfileDir(options.userDataDir);
+  const loginWasRequired = await ensureInteractiveLogin({
+    gl: options.gl,
+    lang: options.lang,
+    userDataDir: options.userDataDir,
+  });
+  if (loginWasRequired) {
+    console.log("Login completed. Continuing with search...\n");
+  }
+
   const blocker = await loadBlocker();
   const activeBrowser = await launchSearchBrowser({
     headed: options.headed,
