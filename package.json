@@ -1,0 +1,58 @@
+{
+  "name": "websearch",
+  "version": "0.1.0",
+  "description": "Google search CLI powered by system Chrome",
+  "type": "module",
+  "packageManager": "bun@1.3.11",
+  "license": "MIT",
+  "bin": {
+    "websearch": "bin/websearch"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ysm-dev/websearch.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ysm-dev/websearch/issues"
+  },
+  "homepage": "https://github.com/ysm-dev/websearch#readme",
+  "keywords": [
+    "google",
+    "search",
+    "serp",
+    "chrome",
+    "cli",
+    "bun"
+  ],
+  "engines": {
+    "bun": ">=1.3.11"
+  },
+  "scripts": {
+    "build": "bun build ./src/index.ts --outdir ./dist --target bun",
+    "check": "tsgo -p tsconfig.json --noEmit",
+    "dev": "bun run ./src/index.ts",
+    "start": "bun run ./dist/index.js",
+    "prepack": "bun run build",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@ghostery/adblocker-puppeteer": "^2.14.1",
+    "citty": "^0.2.1",
+    "puppeteer-core": "^24.40.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "bun-types": "^1.3.11",
+    "@types/node": "^25.5.0",
+    "@typescript/native-preview": "^7.0.0-dev.20260327.2"
+  }
+}
