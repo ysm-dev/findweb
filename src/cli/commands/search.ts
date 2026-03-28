@@ -109,7 +109,7 @@ async function runSearch(args: {
   }
 }
 
-export function createSearchCommand(commandName = "websearch") {
+export function createSearchCommand(commandName = "findweb") {
   return defineCommand({
     meta: {
       name: commandName,

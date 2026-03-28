@@ -1,8 +1,8 @@
 export function renderRootHelp(): string {
   return [
     "Usage:",
-    "  websearch [options] <query> [query ...]",
-    "  websearch login [options]",
+    "  findweb [options] <query> [query ...]",
+    "  findweb login [options]",
     "",
     "Commands:",
     "  login        Open a headed Chrome window and sign in to Google",
@@ -17,8 +17,8 @@ export function renderRootHelp(): string {
     "  --json                 Print JSON output",
     "",
     "Examples:",
-    "  bunx websearch \"yc\"",
-    "  bunx websearch \"yc\" \"apple\" --parallel 2",
-    "  bunx websearch login",
+    "  bunx findweb \"yc\"",
+    "  bunx findweb \"yc\" \"apple\" --parallel 2",
+    "  bunx findweb login",
   ].join("\n");
 }

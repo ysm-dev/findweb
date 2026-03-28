@@ -60,7 +60,7 @@ async function runLogin(args: { gl?: unknown; lang?: unknown; userDataDir?: unkn
   await runLoginFlow(options.gl, options.lang, options.userDataDir);
 }
 
-export function createLoginCommand(commandName = "websearch login") {
+export function createLoginCommand(commandName = "findweb login") {
   return defineCommand({
     meta: { name: commandName, description: "Open a reusable Google sign-in session." },
     args: createLoginArgs(),
