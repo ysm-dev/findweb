@@ -248,8 +248,7 @@ Ghostery 차단기는 프리빌트 광고+트래킹 리스트에서 프로세스
 ## 프로필 관리
 
 - 기본 프로필 경로
-  - `/tmp/google-search-profile`
-  - 또는 이미 존재하는 경우 레거시 fallback `/tmp/gsearch-manual-login-profile`
+  - `${XDG_DATA_HOME:-~/.local/share}/findweb/chrome-profile`
 - 환경 변수 오버라이드
   - `GOOGLE_SEARCH_USER_DATA_DIR`
 - 준비 완료 마커

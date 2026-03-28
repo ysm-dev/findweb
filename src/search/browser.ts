@@ -1,6 +1,7 @@
-import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import http from "node:http";
+import os from "node:os";
+import path from "node:path";
 
 import puppeteer from "puppeteer-core";
 
@@ -116,12 +117,20 @@ export async function closeSearchBrowser(activeBrowser: ActiveBrowser): Promise<
   }
 }
 
+function defaultXdgDataHome(): string {
+  const configured = process.env.XDG_DATA_HOME;
+  if (configured && path.isAbsolute(configured)) {
+    return configured;
+  }
+
+  return path.join(os.homedir(), ".local", "share");
+}
+
 export function defaultUserDataDir(): string {
   const configured = process.env.GOOGLE_SEARCH_USER_DATA_DIR;
   if (configured) {
     return configured;
   }
 
-  const legacyProfile = "/tmp/gsearch-manual-login-profile";
-  return ["/tmp/google-search-profile", legacyProfile].find((candidate) => existsSync(candidate)) ?? "/tmp/google-search-profile";
+  return path.join(defaultXdgDataHome(), "findweb", "chrome-profile");
 }

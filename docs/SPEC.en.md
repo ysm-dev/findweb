@@ -248,8 +248,7 @@ These are applied to:
 ## Profile Management
 
 - Default profile path:
-  - `/tmp/google-search-profile`
-  - or legacy fallback `/tmp/gsearch-manual-login-profile` if it already exists
+  - `${XDG_DATA_HOME:-~/.local/share}/findweb/chrome-profile`
 - Environment override:
   - `GOOGLE_SEARCH_USER_DATA_DIR`
 - Prepared profile marker:
