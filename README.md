@@ -42,7 +42,7 @@ findweb login
 
 - If the profile is already prepared, search runs immediately.
 - If the profile has not been prepared yet, `findweb` automatically opens the login flow first.
-- After you sign in and close the browser window, `findweb` writes a local prepared-profile marker so future searches can start immediately.
+- After sign-in is detected, `findweb` saves a local prepared-profile marker and continues automatically.
 - By default, the profile directory is `${XDG_DATA_HOME:-~/.local/share}/findweb/chrome-profile` unless you pass `--userDataDir` or set `GOOGLE_SEARCH_USER_DATA_DIR`.
 
 In practice, the first search on a fresh profile behaves like this:
@@ -53,7 +53,7 @@ findweb "yc"
 
 1. detect missing prepared-profile marker
 2. open headed Chrome login flow
-3. wait for you to sign in and close the browser
+3. wait for you to finish signing in
 4. continue the original search
 
 ## Options
@@ -98,7 +98,7 @@ You can trigger that ahead of time with:
 findweb login
 ```
 
-This opens a visible Chrome window with the Google sign-in page. After signing in, close the browser. The session is saved to the profile directory, and `findweb` records that the profile is ready for future searches.
+This opens a visible Chrome window with the Google sign-in page. After sign-in is detected, `findweb` saves the session to the profile directory and records that the profile is ready for future searches.
 
 ## Output
 

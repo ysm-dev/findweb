@@ -175,7 +175,7 @@ When a search starts:
 2. It checks for `.findweb-profile-ready`.
 3. If the marker exists, search continues immediately.
 4. If the marker does not exist, `findweb` opens the interactive login flow first.
-5. After the user closes the login browser, `findweb` writes the marker.
+5. After Google sign-in is detected, `findweb` writes the marker and closes the login browser.
 6. The original search then continues.
 
 This means the first search on a fresh profile blocks until the user completes the login flow.

@@ -24,6 +24,11 @@ function createLoginArgs(): ArgsDef {
   };
 }
 
+function printCommandError(error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(`ERROR: ${message}`);
+}
+
 async function runLogin(args: { gl?: unknown; lang?: unknown; userDataDir?: unknown }): Promise<void> {
   const options = normalizeLoginOptions({
     gl: typeof args.gl === "string" ? args.gl : undefined,
@@ -39,11 +44,16 @@ export function createLoginCommand(commandName = "findweb login") {
     meta: { name: commandName, description: "Open a reusable Google sign-in session." },
     args: createLoginArgs(),
     async run({ args }) {
-      await runLogin({
-        gl: args.gl,
-        lang: args.lang,
-        userDataDir: args.userDataDir,
-      });
+      try {
+        await runLogin({
+          gl: args.gl,
+          lang: args.lang,
+          userDataDir: args.userDataDir,
+        });
+      } catch (error) {
+        printCommandError(error);
+        process.exitCode = 1;
+      }
     },
   });
 }

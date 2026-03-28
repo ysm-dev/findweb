@@ -10,8 +10,8 @@ type LoginFlowOptions = {
 
 function printLoginInstructions(userDataDir: string): void {
   console.log(`Login browser launched with profile: ${userDataDir}`);
-  console.log("Sign in to Google to prepare this profile for future searches.");
-  console.log("Close the browser window when you are done.");
+  console.log("Complete Google sign-in to prepare this profile for future searches.");
+  console.log("The session is saved automatically once sign-in is detected.");
 }
 
 export async function runInteractiveLoginFlow(options: LoginFlowOptions): Promise<void> {

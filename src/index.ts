@@ -28,4 +28,10 @@ async function main(): Promise<void> {
   await runMain(createSearchCommand(), { rawArgs: action.rawArgs });
 }
 
-await main();
+try {
+  await main();
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(`ERROR: ${message}`);
+  process.exitCode = 1;
+}

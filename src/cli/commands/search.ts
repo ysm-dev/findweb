@@ -62,6 +62,11 @@ const searchArgs: ArgsDef = {
   },
 };
 
+function printCommandError(error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(`ERROR: ${message}`);
+}
+
 async function runSearch(args: {
   _: string[];
   gl?: unknown;
@@ -123,7 +128,12 @@ export function createSearchCommand(commandName = "findweb") {
     },
     args: searchArgs,
     async run({ args }) {
-      await runSearch(args);
+      try {
+        await runSearch(args);
+      } catch (error) {
+        printCommandError(error);
+        process.exitCode = 1;
+      }
     },
   });
 }
